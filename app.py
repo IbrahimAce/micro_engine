@@ -1,33 +1,51 @@
-# app.py
-# This is where we define our routes (URL -> function mappings).
-# We import the Router, create one instance called "app",
-# then use @app.route() to register handler functions.
+# app.py  (Phase 4 — handlers are now async def)
 #
-# The server imports "app" from here and asks it for the right handler.
+# "async def" handlers can use "await asyncio.sleep()" to simulate
+# waiting for something slow (like a database) without blocking others.
 
+import asyncio
 from router import Router
 from request import Request
+from server import run_async_server
 
-# Create the single global router instance
 app = Router()
 
 # ---------------------------------------------------------------
-# Define routes below using @app.route(path, method)
+# Routes — now using async def
 # ---------------------------------------------------------------
 
 @app.route("/", "GET")
-def home(request: Request):
-    return "Welcome to Micro-Engine!"
+async def home(request: Request):
+    # Simulate a 1-second database query
+    await asyncio.sleep(1)
+    return "Welcome to async Micro-Engine!"
 
 @app.route("/users", "GET")
-def list_users(request: Request):
+async def list_users(request: Request):
+    await asyncio.sleep(0.5)
     return "User list: [Alice, Bob, Charlie]"
 
 @app.route("/users", "POST")
-def create_user(request: Request):
+async def create_user(request: Request):
     body = request.body.decode("utf-8", errors="replace")
+    await asyncio.sleep(0.2)
     return f"Created user with data: {body}"
 
 @app.route("/about", "GET")
-def about(request: Request):
+async def about(request: Request):
     return "Micro-Engine v0.1 — built from scratch!"
+
+@app.route("/slow", "GET")
+async def slow_route(request: Request):
+    # 5-second delay — use this to prove concurrency works
+    print("  /slow started — sleeping 5 seconds...")
+    await asyncio.sleep(5)
+    print("  /slow finished!")
+    return "Slow response finished!"
+
+# ---------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------
+
+if __name__ == "__main__":
+    asyncio.run(run_async_server(app))

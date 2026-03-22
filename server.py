@@ -1,48 +1,45 @@
-# server.py  (Phase 3 version)
-# Now uses the Router to find and call the right handler function.
+# server.py  (Phase 4 — fully async)
+#
+# asyncio.start_server() replaces the manual socket.accept() loop.
+# For every new connection it automatically calls handle_client().
+#
+# "async def" means the function is a coroutine — it can be paused.
+# "await" means: pause here and let other coroutines run while we wait.
+#
+# inspect.iscoroutine() checks if calling handler(req) returned a coroutine
+# (i.e. whether the handler is "async def") so we know whether to await it.
 
-import socket
+import asyncio
+import inspect
 from request import Request
-from app import app   # import the router instance from app.py
 
-def run_server():
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket.bind(("127.0.0.1", 8080))
-    server_socket.listen(5)
-
-    print("=" * 50)
-    print("Phase 3: Routing engine server")
-    print("Listening on http://127.0.0.1:8080")
-    print("Registered routes:")
-    for key in app.routes:
-        print(f"  {key[0]} {key[1]}")
-    print("Press Ctrl+C to stop")
-    print("=" * 50)
-
-    while True:
-        client_socket, addr = server_socket.accept()
-        data = client_socket.recv(4096)
+async def handle_client(reader, writer, router):
+    try:
+        # await reader.read() — wait for data without blocking other requests
+        data = await reader.read(4096)
 
         if not data:
-            client_socket.close()
-            continue
+            writer.close()
+            return
 
         req = Request(data)
-        print(f"\n{req.method} {req.path}")
+        print(f"{req.method} {req.path}")
 
-        # Ask the router for the handler function
-        handler = app.get_handler(req.method, req.path)
+        handler = router.get_handler(req.method, req.path)
 
         if handler is not None:
-            # Call the handler and get the response body
+            # Call the handler — it might be async or regular
             result = handler(req)
+
+            # If it returned a coroutine (async def), we must await it
+            if inspect.iscoroutine(result):
+                result = await result
+
             status_line = b"HTTP/1.1 200 OK"
         else:
             result = f"404 Not Found: {req.path}"
             status_line = b"HTTP/1.1 404 Not Found"
 
-        # Convert result to bytes if it isn't already
         if isinstance(result, bytes):
             body = result
         else:
@@ -55,8 +52,36 @@ def run_server():
             b"\r\n"
         ) + body
 
-        client_socket.sendall(response)
-        client_socket.close()
+        writer.write(response)
+        await writer.drain()  # wait until data is actually sent
 
-if __name__ == "__main__":
-    run_server()
+    except Exception as e:
+        print(f"Error handling request: {e}")
+    finally:
+        # Always close the connection
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+
+
+async def run_async_server(router, host="127.0.0.1", port=8080):
+    # lambda r, w: creates a small function that passes the router in
+    server = await asyncio.start_server(
+        lambda r, w: handle_client(r, w, router),
+        host,
+        port
+    )
+
+    print("=" * 50)
+    print("Phase 4: Async server")
+    print(f"Listening on http://{host}:{port}")
+    print("Registered routes:")
+    for key in router.routes:
+        print(f"  {key[0]} {key[1]}")
+    print("Press Ctrl+C to stop")
+    print("=" * 50)
+
+    async with server:
+        await server.serve_forever()
