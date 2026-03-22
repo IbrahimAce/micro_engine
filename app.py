@@ -1,16 +1,24 @@
-# app.py  (Phase 5 — adds ORM models and new routes)
+# app.py  (Phase 6 — all routes wrapped with timing middleware)
+#
+# Notice the decorator order:
+#   @app.route("/users", "GET")
+#   @apply_timing
+#   async def list_users(request):
+#
+# Python applies decorators bottom-up, so apply_timing runs first,
+# then app.route stores the already-wrapped function.
 
 import asyncio
-import json
 from router import Router
 from request import Request
 from server import run_async_server
 from models import BaseModel
+from middleware import apply_timing
 
 app = Router()
 
 # ---------------------------------------------------------------
-# Define models
+# Models
 # ---------------------------------------------------------------
 
 class User(BaseModel):
@@ -22,18 +30,22 @@ class Product(BaseModel):
     price: float
 
 # ---------------------------------------------------------------
-# Routes
+# Routes — each wrapped with @apply_timing
 # ---------------------------------------------------------------
 
 @app.route("/", "GET")
+@apply_timing
 async def home(request: Request):
+    await asyncio.sleep(0.1)
     return "Welcome to Micro-Engine!"
 
 @app.route("/about", "GET")
+@apply_timing
 async def about(request: Request):
     return "Micro-Engine v0.1 — built from scratch!"
 
 @app.route("/users", "GET")
+@apply_timing
 async def list_users(request: Request):
     users = User.all()
     if not users:
@@ -41,9 +53,9 @@ async def list_users(request: Request):
     return "\n".join(str(u) for u in users)
 
 @app.route("/users", "POST")
+@apply_timing
 async def create_user(request: Request):
-    # Expects body like: name=Alice&age=30
-    body = request.body.decode("utf-8", errors="replace")
+    body   = request.body.decode("utf-8", errors="replace")
     params = {}
     for pair in body.split("&"):
         if "=" in pair:
@@ -58,8 +70,9 @@ async def create_user(request: Request):
     return f"Created: {user}"
 
 @app.route("/products", "POST")
+@apply_timing
 async def create_product(request: Request):
-    body = request.body.decode("utf-8", errors="replace")
+    body   = request.body.decode("utf-8", errors="replace")
     params = {}
     for pair in body.split("&"):
         if "=" in pair:
@@ -74,6 +87,7 @@ async def create_product(request: Request):
     return f"Created: {product}"
 
 @app.route("/slow", "GET")
+@apply_timing
 async def slow_route(request: Request):
     print("  /slow started — sleeping 5 seconds...")
     await asyncio.sleep(5)
