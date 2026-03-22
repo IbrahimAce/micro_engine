@@ -1,43 +1,80 @@
-# app.py  (Phase 4 — handlers are now async def)
-#
-# "async def" handlers can use "await asyncio.sleep()" to simulate
-# waiting for something slow (like a database) without blocking others.
+# app.py  (Phase 5 — adds ORM models and new routes)
 
 import asyncio
+import json
 from router import Router
 from request import Request
 from server import run_async_server
+from models import BaseModel
 
 app = Router()
 
 # ---------------------------------------------------------------
-# Routes — now using async def
+# Define models
+# ---------------------------------------------------------------
+
+class User(BaseModel):
+    name: str
+    age: int
+
+class Product(BaseModel):
+    title: str
+    price: float
+
+# ---------------------------------------------------------------
+# Routes
 # ---------------------------------------------------------------
 
 @app.route("/", "GET")
 async def home(request: Request):
-    # Simulate a 1-second database query
-    await asyncio.sleep(1)
-    return "Welcome to async Micro-Engine!"
-
-@app.route("/users", "GET")
-async def list_users(request: Request):
-    await asyncio.sleep(0.5)
-    return "User list: [Alice, Bob, Charlie]"
-
-@app.route("/users", "POST")
-async def create_user(request: Request):
-    body = request.body.decode("utf-8", errors="replace")
-    await asyncio.sleep(0.2)
-    return f"Created user with data: {body}"
+    return "Welcome to Micro-Engine!"
 
 @app.route("/about", "GET")
 async def about(request: Request):
     return "Micro-Engine v0.1 — built from scratch!"
 
+@app.route("/users", "GET")
+async def list_users(request: Request):
+    users = User.all()
+    if not users:
+        return "No users yet. POST to /users to create one."
+    return "\n".join(str(u) for u in users)
+
+@app.route("/users", "POST")
+async def create_user(request: Request):
+    # Expects body like: name=Alice&age=30
+    body = request.body.decode("utf-8", errors="replace")
+    params = {}
+    for pair in body.split("&"):
+        if "=" in pair:
+            k, v = pair.split("=", 1)
+            params[k.strip()] = v.strip()
+
+    name = params.get("name", "Unknown")
+    age  = int(params.get("age", 0))
+
+    user = User(name=name, age=age)
+    user.save()
+    return f"Created: {user}"
+
+@app.route("/products", "POST")
+async def create_product(request: Request):
+    body = request.body.decode("utf-8", errors="replace")
+    params = {}
+    for pair in body.split("&"):
+        if "=" in pair:
+            k, v = pair.split("=", 1)
+            params[k.strip()] = v.strip()
+
+    title = params.get("title", "Unknown")
+    price = float(params.get("price", 0.0))
+
+    product = Product(title=title, price=price)
+    product.save()
+    return f"Created: {product}"
+
 @app.route("/slow", "GET")
 async def slow_route(request: Request):
-    # 5-second delay — use this to prove concurrency works
     print("  /slow started — sleeping 5 seconds...")
     await asyncio.sleep(5)
     print("  /slow finished!")
